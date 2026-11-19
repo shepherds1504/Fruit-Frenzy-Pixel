@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fruit Frenzy: Pixel Edition!</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 24px 14px;
+    display: flex; justify-content: center; align-items: flex-start;
+    background: #f0e8d8; color: #30271d;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .game { width: min(100%, 520px); display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; text-align: center; font-size: clamp(22px, 5vw, 30px); }
+  .stats { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .stat { font-size:12px; opacity:.7; letter-spacing:.06em; }
+  .value { font-size:21px; font-weight:750; }
+  canvas { width:100%; max-width:480px; height:auto; display:block; margin:auto; border-radius:10px; touch-action:pan-y; box-shadow:0 4px 18px #49351e24; }
+  .actions { display:flex; justify-content:center; gap:10px; }
+  button { padding:10px 18px; border:1px solid #b8a98f; border-radius:9px; background:#fffaf1; color:#30271d; font-size:15px; font-weight:650; cursor:pointer; }
+  button.primary { background:#a8662f; color:white; border-color:#a8662f; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .hint { text-align:center; font-size:13px; color:#685944; }
+</style>
+</head>
+<body>
+<main class="game">
+  <h1>Fruit Frenzy: Pixel Edition! 🍍</h1>
+  <div class="stats">
+    <div><div class="stat">SCORE</div><div class="value" id="fx-score">0</div></div>
+    <div style="text-align:center"><div class="stat">NEXT FRUIT</div><div id="fx-next" style="font-size:24px">🫐</div></div>
+    <div style="text-align:right"><div class="stat">BEST</div><div class="value" id="fx-best">0</div></div>
+  </div>
+  <canvas id="fx-board" width="480" height="560" aria-label="Fruit Frenzy game board"></canvas>
+  <div class="actions">
+    <button class="primary" id="fx-drop">Drop fruit</button>
+    <button id="fx-reset">Restart</button>
+  </div>
+  <div class="hint">Move your mouse or finger to aim. Click or tap the crate to drop.</div>
+  <div class="hint" id="fx-message" aria-live="polite">Match two of the same fruit to evolve them!</div>
+</main>
+<script>
+(()=>{
+ const canvas=document.getElementById('fx-board');
+ const ctx=canvas.getContext('2d');
+ const $=id=>document.getElementById(id);
+ const scoreEl=$('fx-score'),bestEl=$('fx-best'),nextEl=$('fx-next');
+ const message=$('fx-message'),dropButton=$('fx-drop');
+ const W=480,H=560,LEFT=72,RIGHT=408,FLOOR=500;
+ const kinds=[
+  {name:'Blueberry',emoji:'🫐',r:14,color:'#3975c7',dark:'#244b91',light:'#8bb9ed'},
+  {name:'Grapes',emoji:'🍇',r:18,color:'#8145a9',dark:'#4b286f',light:'#c28bdb'},
+  {name:'Cherries',emoji:'🍒',r:20,color:'#d72e42',dark:'#8d172a',light:'#ff8990'},
+  {name:'Strawberry',emoji:'🍓',r:23,color:'#e94349',dark:'#9e202d',light:'#ff9a9a'},
+  {name:'Orange',emoji:'🍊',r:26,color:'#ef941e',dark:'#a95a13',light:'#ffd16a'},
+  {name:'Apple',emoji:'🍎',r:29,color:'#d93b36',dark:'#8e2427',light:'#ff9c79'},
+  {name:'Melon',emoji:'🍈',r:34,color:'#75ad50',dark:'#376d3d',light:'#c5df83'},
+  {name:'Pineapple',emoji:'🍍',r:38,color:'#e5b83c',dark:'#a87524',light:'#ffe18a'}
+ ];
+ let balls=[],score=0,best=0,current=0,next=0,aim=240,over=false,won=false,last=0,serial=0;
+ try{best=Number(localStorage.getItem('fruit-frenzy-best'))||0}catch(e){}
+ bestEl.textContent=best;
+
+ function update(){
+  scoreEl.textContent=score;
+  bestEl.textContent=best;
+  nextEl.textContent=kinds[next].emoji;
+  dropButton.disabled=over||won;
+ }
+ function reset(){
+  balls=[];score=0;over=false;won=false;aim=240;last=0;
+  current=Math.floor(Math.random()*4);
+  next=Math.floor(Math.random()*4);
+  message.textContent='Match two of the same fruit to evolve them!';
+  update();
+ }
+ function drop(){
+  if(over||won)return;
+  const r=kinds[current].r;
+  const x=Math.max(LEFT+r+2,Math.min(RIGHT-r-2,aim));
+  balls.push({id:++serial,x:x,y:88,vx:0,vy:0,r:r,type:current,age:0});
+  current=next;
+  next=Math.floor(Math.random()*4);
+  update();
+ }
+ function merge(a,b){
+  if(a.type!==b.type||a.type===7)return false;
+  const i=balls.indexOf(a),j=balls.indexOf(b);
+  if(i<0||j<0)return false;
+  const type=a.type+1;
+  const x=(a.x+b.x)/2,y=(a.y+b.y)/2;
+  balls.splice(Math.max(i,j),1);
+  balls.splice(Math.min(i,j),1);
+  balls.push({id:++serial,x:x,y:y,vx:0,vy:-65,r:kinds[type].r,type:type,age:0});
+  score+=(type+1)*10;
+  if(score>best){
+   best=score;
+   try{localStorage.setItem('fruit-frenzy-best',String(best))}catch(e){}
+  }
+  if(type===7){won=true;message.textContent='You made a pineapple! You win!'}
+  update();
+  return true;
+ }
+
+ function pixel(x,y,size,color){
+  ctx.fillStyle=color;
+  ctx.fillRect(Math.round(x),Math.round(y),size,size);
+ }
+ function drawFruit(type,x,y,r){
+  const unit=Math.max(2,Math.floor(r/6));
+  const cols=12,rows=12;
+  const k=kinds[type];
+  const cx=x-r,cy=y-r;
+  for(let gy=0;gy<rows;gy++){
+   for(let gx=0;gx<cols;gx++){
+    const nx=(gx-5.5)/5.5,ny=(gy-5.5)/5.5;
+    let inside=false;
+    if(type===0)inside=nx*nx+ny*ny<.94;
+    if(type===1){
+     const centers=[[4,3],[7,3],[3,5],[6,5],[8,6],[4,8],[7,8]];
+     inside=centers.some(p=>Math.hypot(gx-p[0],gy-p[1])<2.35);
+    }
+    if(type===2)inside=(Math.hypot(gx-3.5,gy-7)<3.1)||(Math.hypot(gx-8,gy-7)<3.1);
+    if(type===3)inside=(Math.abs(nx)<.76&&ny>-.45&&ny<.72&&Math.abs(nx)<.95-.2*ny);
+    if(type===4)inside=nx*nx+ny*ny<.92;
+    if(type===5)inside=(nx*nx+ny*ny<.94)&&(ny>-.9);
+    if(type===6)inside=nx*nx+ny*ny<.95;
+    if(type===7)inside=(Math.abs(nx)<.7&&Math.abs(ny)<.78);
+    if(!inside)continue;
+    let color=k.color;
+    if(gx===0||gx===11||gy===0||gy===11)color=k.dark;
+    else if((gx+gy*2)%7===0)color=k.light;
+    if(type===7&&((gx+gy)%4===0))color='#b88b2c';
+    if(type===6&&gx%3===0)color='#4e8d43';
+    pixel(cx+gx*unit,cy+gy*unit,unit,color);
+   }
+  }
+  if(type===0){
+   pixel(x-unit,y-r-unit,unit,'#315e35');
+   pixel(x+unit,y-r-unit,unit,'#315e35');
+  }else if(type===1){
+   pixel(x-unit,y-r-unit,unit,'#438b43');
+   pixel(x,y-r-2*unit,unit,'#438b43');
+  }else if(type===2){
+   pixel(x-unit,y-r-2*unit,unit,'#34783a');
+   pixel(x+unit,y-r-3*unit,unit,'#34783a');
+   pixel(x,y-r-unit,unit,'#397d3c');
+  }else if(type===3||type===5){
+   pixel(x,y-r-2*unit,unit,'#347c39');
+   pixel(x+unit,y-r-3*unit,unit,'#347c39');
+   pixel(x-unit,y-r-3*unit,unit,'#347c39');
+  }else if(type===7){
+   for(let q=-2;q<=2;q++)pixel(x+q*unit,y-r-2*unit,unit,'#34783b');
+   pixel(x,y-r-3*unit,unit,'#34783b');
+  }
+  pixel(x-r/2,y-r/3,unit,k.light);
+  if(type===4)pixel(x+unit,y+unit,unit,'#ffe08a');
+ }
+ function physics(dt){
+  const h=dt/2;
+  for(let s=0;s<2;s++){
+   for(const b of balls){
+    b.age+=h;
+    b.vy+=650*h;
+    b.x+=b.vx*h;b.y+=b.vy*h;
+    if(b.x-b.r<LEFT){b.x=LEFT+b.r;b.vx=Math.abs(b.vx)*.2}
+    if(b.x+b.r>RIGHT){b.x=RIGHT-b.r;b.vx=-Math.abs(b.vx)*.2}
+    if(b.y+b.r>FLOOR){
+     b.y=FLOOR-b.r;
+     if(b.vy>40)b.vy=-b.vy*.16;else b.vy=0;
+     b.vx*=Math.pow(.94,h*60);
+     if(Math.abs(b.vx)<2)b.vx=0;
+    }
+   }
+   let didMerge=false;
+   for(let i=0;i<balls.length&&!didMerge;i++){
+    const a=balls[i];
+    for(let j=i+1;j<balls.length;j++){
+     const b=balls[j],dx=b.x-a.x,dy=b.y-a.y;
+     const d=Math.hypot(dx,dy)||.001,min=a.r+b.r;
+     if(d>=min)continue;
+     if(a.type===b.type&&a.type<7){merge(a,b);didMerge=true;break}
+     const nx=dx/d,ny=dy/d,overlap=min-d;
+     a.x-=nx*overlap*.5;a.y-=ny*overlap*.5;
+     b.x+=nx*overlap*.5;b.y+=ny*overlap*.5;
+     const rel=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
+     if(rel<0){
+      const impulse=-rel*.2;
+      a.vx-=impulse*nx;a.vy-=impulse*ny;
+      b.vx+=impulse*nx;b.vy+=impulse*ny;
+     }
+    }
+   }
+  }
+  for(const b of balls){
+   b.x=Math.max(LEFT+b.r,Math.min(RIGHT-b.r,b.x));
+   if(b.y+b.r>FLOOR)b.y=FLOOR-b.r;
+  }
+  if(balls.some(b=>b.y-b.r<145&&b.age>1.5&&Math.abs(b.vy)<15)){
+   over=true;message.textContent='Crate overflow! Press Restart to play again.';update();
+  }
+ }
+ function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#d9c69d';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(100,70,35,.08)';
+  for(let x=10;x<W;x+=32)for(let y=8;y<125;y+=32)ctx.fillRect(x,y,4,4);
+  ctx.fillStyle='#71451f';ctx.fillRect(LEFT,130,RIGHT-LEFT,FLOOR-130);
+  ctx.fillStyle='#99602e';ctx.fillRect(LEFT+7,137,RIGHT-LEFT-14,FLOOR-137);
+  ctx.save();ctx.setLineDash([8,6]);ctx.strokeStyle='#e6c078';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(LEFT+3,145);ctx.lineTo(RIGHT-3,145);ctx.stroke();ctx.restore();
+  ctx.fillStyle='#75471f';ctx.fillRect(LEFT-12,130,12,FLOOR-130);ctx.fillRect(RIGHT,130,12,FLOOR-130);
+  for(let y=158;y<FLOOR;y+=66){
+   ctx.fillStyle='#b77a3d';ctx.fillRect(LEFT-12,y,RIGHT-LEFT+24,9);
+   ctx.fillStyle='#68401f';ctx.fillRect(LEFT-12,y+7,RIGHT-LEFT+24,2);
+  }
+  ctx.fillStyle='#b77a3d';ctx.fillRect(LEFT-15,FLOOR,RIGHT-LEFT+30,19);
+  ctx.strokeStyle='#5d391c';ctx.lineWidth=4;ctx.strokeRect(LEFT-14,130,RIGHT-LEFT+28,FLOOR-111);
+  if(!over&&!won){
+   const r=kinds[current].r,x=Math.max(LEFT+r+2,Math.min(RIGHT-r-2,aim));
+   ctx.save();ctx.setLineDash([4,6]);ctx.strokeStyle='rgba(55,38,20,.55)';
+   ctx.beginPath();ctx.moveTo(x,91);ctx.lineTo(x,125);ctx.stroke();ctx.restore();
+   drawFruit(current,x,76,r);
+  }
+  for(const b of balls)drawFruit(b.type,b.x,b.y,b.r);
+  if(over||won){
+   ctx.fillStyle='rgba(30,20,10,.8)';ctx.fillRect(LEFT+12,240,RIGHT-LEFT-24,104);
+   ctx.textAlign='center';ctx.fillStyle='#fff';ctx.font='bold 24px monospace';
+   ctx.fillText(won?'PINEAPPLE!':'GAME OVER',240,280);
+   ctx.font='14px monospace';ctx.fillText(won?'YOU WIN!':'CRATE OVERFLOWED',240,309);
+   ctx.fillText('PRESS RESTART',240,330);
+  }
+ }
+ function frame(t){
+  const dt=last?Math.min((t-last)/1000,.025):0;
+  last=t;
+  if(!over&&!won)physics(dt);
+  draw();
+  requestAnimationFrame(frame);
+ }
+ function setAim(e){
+  const rect=canvas.getBoundingClientRect();
+  aim=(e.clientX-rect.left)*W/rect.width;
+  aim=Math.max(90,Math.min(390,aim));
+ }
+ canvas.addEventListener('pointermove',setAim);
+ canvas.addEventListener('pointerdown',e=>{setAim(e);drop()});
+ dropButton.addEventListener('click',drop);
+ $('fx-reset').addEventListener('click',reset);
+ reset();
+ requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
